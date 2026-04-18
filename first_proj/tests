@@ -1,0 +1,5 @@
+./wana -a "2026-02-22 09:00:00" -b "2026-02-22 09:44:54" -ip 2001:67c:1220:808::93e5:8ad -uri "/robots\.txt"
+./wana -a "2026-02-21 10:50:14" list-ip ios-example.com.access.log.1
+./wana -uri "https://ios-example.com/wp-cron.php?doing_wp_cron=1550774941.3440840244293212890625" list-ip ios-example.com.access.log.1
+./wana -a "2026-02-22 09:00:00" -b "2026-02-22 09:44:54" ios-example.com.access.log
+./wana -uri "/robots\.txt" hist-load *log*

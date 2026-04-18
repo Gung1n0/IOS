@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+
+filters=()
+while [[ "$1" == -* ]]; do
+    filters+=("$1" "$2")
+    shift 2
+done
+
+funct="$1"
+shift 1
+logs=("$@")
+
+case "$funct" in
+    list-ip|list-hosts|list-uri|hist-ip|hist-load)
+        ;;
+    *)
+        logs=("$funct" "${logs[@]}")
+        funct=""
+        ;;
+esac
+
+data_in=()
+if (( ${#logs[@]} == 0 )); then
+    mapfile -t data_in
+else
+    IFS=$'\n'
+    for log in "${logs[@]}"; do
+        if [[ "$log" == *.gz ]]; then
+            data_in+=($(gunzip -c "$log"))
+        else
+            data_in+=($(cat "$log"))
+        fi
+    done
+    unset IFS
+fi
+logs=("${data_in[@]}")
+
+
+#a
+#b
+#ip
+#uri
+filter_array=(1 1 1 1)
+filter_argument=("" "" "" "")
+
+if ((${#filters[@]} > 0)); then
+    for (( i=0; i<${#filters[@]} ; i=i+2 )); do
+        filter="${filters[$i]}"
+        case "$filter" in
+            -a)
+                filter_array[0]=0
+                filter_argument[0]="${filters[$((i + 1))]}"
+                ;;
+            -b)
+                filter_array[1]=0
+                filter_argument[1]="${filters[$((i + 1))]}"
+                ;;
+            -ip)
+                filter_array[2]=0
+                filter_argument[2]="${filters[$((i + 1))]}"
+                ;;
+            -uri)
+                filter_array[3]=0
+                filter_argument[3]="${filters[$((i + 1))]}"
+                ;;
+            *)
+            ;;
+        esac
+    done
+fi
+
+#echo "${filter_array[@]}"     # 1 1 1 1
+#echo "${filter_argument[@]}"  # "" "" "" ""
+
+
+
+function find_higher_time()
+{
+    time_in="$1"
+    time_log="$2"
+
+    time_in=$(date -d "$time_in" "+%Y%m%d%H%M%S" 2>/dev/null)
+
+    time_log=$(echo "$time_log" | sed 's/\// /g; s/:/ /')
+    time_log=$(date -d "$time_log" "+%Y%m%d%H%M%S" 2>/dev/null)
+
+    ((time_in < time_log))
+}
+
+function find_lower_time()
+{
+    time_in="$1"
+    time_log="$2"
+
+    time_in=$(date -d "$time_in" "+%Y%m%d%H%M%S" 2>/dev/null)
+
+    time_log=$(echo "$time_log" | sed 's/\// /g; s/:/ /')
+    time_log=$(date -d "$time_log" "+%Y%m%d%H%M%S" 2>/dev/null)
+
+    ((time_in > time_log))
+}
+
+function filter_a
+{
+time1="$1"
+time2="$2"
+
+if find_higher_time "${time1}" "${time2}"; then
+    return 0
+fi
+return 1
+}
+
+function filter_b
+{
+time1="$1"
+time2="$2"
+
+if find_lower_time "${time1}" "${time2}"; then
+    return 0
+fi
+return 1
+}
+
+function filter_ip
+{
+    ip_adr_log="$1"
+    ip_adr_filter="$2"
+
+    if [[ "$ip_adr_filter" = "$ip_adr_log" ]]; then
+    return 0
+    fi
+    return 1
+}
+
+function filter_uri
+{
+    uri_log="$1"
+    uri_filter="$2"
+
+    if [[ "$uri_log" =~ $uri_filter ]]; then
+    return 0
+    fi
+    return 1
+}
+
+declare -A hist_count
+
+function find_unique
+{
+    #hist and unique 
+    uq_arr=()
+    for uq in "$@"; do
+        if [[ -z "${hist_count[$uq]}" ]]; then
+            uq_arr+=("$uq")
+            hist_count[$uq]=1
+        else
+            hist_count[$uq]=$(( hist_count[$uq] + 1 ))
+        fi
+    done
+}
+
+
+function find_hosts
+{
+    hosts=()
+    temp=()
+    for host_name in "$@"; do
+        temp=("$(host "$host_name")")
+        if [[ "$temp" == *"pointer"* ]]; then
+            hst=$(echo "$temp" | awk '{print $NF}')
+            hosts+=("${hst%.}")
+        else
+            hosts+=("$host_name")
+        fi
+    done
+}
+
+#    init_arr=()
+#for log_file in "${logs[@]}"; do
+#    if [[ -f "$log_file" ]]; then
+#        while IFS= read -r line; do
+#            init_arr+=("$line")
+#        done < "$log_file"
+#    fi
+#done
+
+
+#logs=("${init_arr[@]}")
+temp_arr=()
+
+    if (( ${filter_array[0]} == 0 )); then
+    for log in "${logs[@]}"; do
+        time="${log#*[}"
+        time="${time%%]*}"
+        if filter_a "${filter_argument[0]}" "$time"; then
+            temp_arr+=("$log")
+        fi
+    done
+    logs=("${temp_arr[@]}")
+    temp_arr=()
+fi
+
+if (( ${filter_array[1]} == 0 )); then
+    for log in "${logs[@]}"; do
+        time="${log#*[}"
+        time="${time%%]*}"
+        if filter_b "${filter_argument[1]}" "$time"; then
+            temp_arr+=("$log")
+        fi
+    done
+    logs=("${temp_arr[@]}")
+    temp_arr=()
+fi
+
+if (( ${filter_array[2]} == 0 )); then
+    #filter pre ip
+    for log in "${logs[@]}"; do
+            ip_adr="${log%% *}"
+            if filter_ip "${filter_argument[2]}" "$ip_adr"; then
+                temp_arr+=("$log")
+            fi
+    done
+    logs=("${temp_arr[@]}")
+    temp_arr=()
+fi
+
+if (( ${filter_array[3]} == 0 )); then
+    #filter pre uri
+    for log in "${logs[@]}"; do
+            uri=$(echo "$log" | awk '{print $7}')
+            if filter_uri "$uri" "${filter_argument[3]}"; then
+                temp_arr+=("$log")
+            fi
+    done
+    logs=("${temp_arr[@]}")
+    temp_arr=()
+fi
+
+#echo "$funct"
+
+case "$funct" in
+    list-ip)
+        ip=()
+        for log in "${logs[@]}"; do
+            ip+=("${log%% *}")
+        done
+        find_unique "${ip[@]}"
+        
+        for arr in "${uq_arr[@]}"; do
+            echo "$arr"
+        done
+        ;;
+    list-hosts)
+        ip=()
+        for src in "${logs[@]}"; do
+            ip+=("${src%% *}")
+        done
+        find_unique "${ip[@]}"
+        find_hosts "${uq_arr[@]}"
+        for arr in "${hosts[@]}"; do
+            echo "$arr"
+        done
+    ;;
+    list-uri)
+       uri=()
+        for log in "${logs[@]}"; do
+            uri_temp=$(echo "$log" | awk '{print $7}')
+            if [[ "${uri_temp:0:1}" == "/" ]]; then
+             uri+=("$uri_temp")
+            fi
+        done
+        find_unique "${uri[@]}"
+        
+        for arr in "${uq_arr[@]}"; do
+            echo "$arr"
+        done
+        ;; 
+    hist-ip)
+    ip=()
+    for log in "${logs[@]}"; do
+        ip+=("${log%% *}")
+    done
+    find_unique "${ip[@]}"
+
+    sorted=($(for ip_adrs in "${uq_arr[@]}"; do
+    echo "${hist_count[$ip_adrs]} $ip_adrs"
+    done | sort -rn | awk '{print $2}'))
+    uq_arr=("${sorted[@]}")
+
+    for ip in "${uq_arr[@]}"; do
+    hash=""
+    count=${hist_count[$ip]}
+        for ((i=0; i < count; i++)); do
+        hash+="#"
+        done
+        echo "$ip ($count): $hash"
+    done
+    ;;
+    hist-load)
+        ip=()
+    for log in "${logs[@]}"; do
+        time="${log#*[}"
+        time="${time%%]*}"
+        time="${time% *}"
+        time=$(echo "$time" | sed 's/\// /g; s/:/ /')
+        time=$(date -d "$time" "+%Y-%m-%d %H")
+    ip+=("${time}:00")
+    done
+    find_unique "${ip[@]}"
+
+    for ip in "${uq_arr[@]}"; do
+    hash=""
+        for ((i=0; i < ${hist_count[$ip]}; i++)); do
+        hash+="#"
+        done
+        echo "$ip (${hist_count[$ip]}): $hash"
+    done
+    ;;
+    *)
+        if [[ -z "$funct" ]]; then
+            for log in "${logs[@]}"; do
+                echo "$log"
+            done
+        else
+            echo "Incorrect Input"
+        fi
+        ;;
+esac
