@@ -24,24 +24,25 @@ run_test() {
 }
 
 # valid
-run_test "./main 1 2 4 1 1 1" 1
-run_test "./main 1 2 4 1 1" 0
+run_test "./main 1 2 4 1 1 1" 0
+run_test "./main 1 2 4 1 1" 1
+run_test "./main 1 2 4 1 1 1 1" 1
 
 #min
-run_test "./main 0 1 4 1 1 1" 0
-run_test "./main 1 0 4 1 1 1" 0
-run_test "./main 1 1 3 1 1 1" 0
-run_test "./main 1 1 4 -1 1 1" 0
-run_test "./main 1 1 4 1 -1 1" 0
-run_test "./main 1 1 4 1 1 0" 0
+run_test "./main 0 1 4 1 1 1" 1
+run_test "./main 1 0 4 1 1 1" 1
+run_test "./main 1 1 3 1 1 1" 1
+run_test "./main 1 1 4 -1 1 1" 1
+run_test "./main 1 1 4 1 -1 1" 1
+run_test "./main 1 1 4 1 1 0" 1
 
 #max
-run_test "./main 11 1 4 1 1 1" 0
-run_test "./main 1 10001 4 1 1 1" 0
-run_test "./main 1 1 41 1 1 1" 0
-run_test "./main 1 1 4 1001 1 1" 0
-run_test "./main 1 1 4 1 1001 1" 0
-run_test "./main 1 1 4 1 1 101" 0
+run_test "./main 11 1 4 1 1 1" 1
+run_test "./main 1 10001 4 1 1 1" 1
+run_test "./main 1 1 41 1 1 1" 1
+run_test "./main 1 1 4 1001 1 1" 1
+run_test "./main 1 1 4 1 1001 1" 1
+run_test "./main 1 1 4 1 1 101" 1
 
 echo ""
 echo -e "Results: ${GREEN}$pass passed${NC}, ${RED}$fail failed${NC}"
