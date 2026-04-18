@@ -8,4 +8,11 @@ int done;
 bool will_come;
 } mem;
 
+typedef struct
+{
+    int items;
+    int max_items;
+    int front;
+    int rear;
+} queue;
 #endif

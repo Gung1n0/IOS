@@ -92,43 +92,66 @@ int check_values(int N, int V, int K, int TV, int TN, int O)
         return 1;
     }
 }
+void init_queue(queue q, int x)
+{
+    q.front = -1;
+    q.rear = 0;
+    q.max_items= x;
+}
+void enqueue(queue *q, int value)
+{
+    q->items[&q->rear] = value;
+    q->rear++;
+}
 int main(int argc, char const *argv[])
 {
-    if (!(argc == 7))
+    /*if (!(argc == 7))
     {
         fprintf(stderr, "too few arguments");
-        return 1;
-    }
+        exit(1);
+    }*/
 
-    int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
-    // int V =0, N = 1, K = 4, TV = 1, TN = 1, O = 1;
+    //int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
+     int V =3, N = 2, K = 4, TV = 1, TN = 1, O = 1;
 
     int check = check_values(N, V, K, TV, TN, O);
     if (check == 1)
-        return 1;
+        exit(1);
+
+    create_file();
+
+    queue qn;
+    init_queue(qn,N);
+    queue qv;
+    init_queue(qv,V);
+
     mem *shmem;
     shmem = create_shmem();
     if (shmem == NULL)
     {
         fprintf(stderr, "shared memory allocation failed");
-        return 1;
+        exit(1);
     }
     init_mem(shmem);
 
-    int idV = 0;
-    int idN = 0;
     int id = fork();
-    if (id == 0) // original process
+    if (id == 0) // MAIN process
     {
+        int idV = 0;
+        int idN = 0;
         // vytvorenie vozíkov
         for (int i = 0; i < V; i++)
         {
             int temp = fork();
             if (temp == -1)
-                return 1;
+                exit(1);
             else if (temp == 0)
             {
                 idV = i + 1;
+                char str[100];
+                sprintf(str,"V %i: started",idV);
+                append_file(str,&shmem->counter,false);
+                enqueue(&qv,idV); //tu som skončil
                 break;
             }
         }
@@ -144,7 +167,7 @@ int main(int argc, char const *argv[])
             {
                 int temp = fork();
                 if (temp == -1)
-                    return 1;
+                    exit(1);
                 else if (temp == 0)
                 {
                     idN = i + 1;
@@ -159,15 +182,26 @@ int main(int argc, char const *argv[])
     }
     else if (id > 0)
     {
-        // vytvorenie dispečera
+        // dispečer
+        int cart_capacity_counter= 0;
+        append_file("D: started", &shmem->counter, false);
+        if (true)
+        {
+            append_file("D: PH", &shmem->counter, false);
+        }
+        usleep(O);
     }
     else
     {
         fprintf(stderr, "fork failed");
-        return 1;
+        exit(1);
     }
 
-    munmap(shmem, sizeof(mem));
-    shm_unlink(shared_mem);
+    if (id > 0)
+    {
+        wait(NULL); // wait
+        munmap(shmem, sizeof(mem));
+        shm_unlink(shared_mem);
+    }
     return 0;
 }
