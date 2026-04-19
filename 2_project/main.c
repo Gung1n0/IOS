@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <semaphore.h>
 #include "proj2.h"
 
 #define shared_mem "sh_mem"
@@ -54,9 +55,9 @@ mem *create_shmem()
 void init_mem(mem *shm)
 {
     shm->counter = 1;
-    shm->waiting = 0;
+    shm->waiting = NULL;
     shm->done = 0;
-    shm->done = false;
+    shm->sem = false;
 }
 int check_values(int N, int V, int K, int TV, int TN, int O)
 {
@@ -92,16 +93,37 @@ int check_values(int N, int V, int K, int TV, int TN, int O)
         return 1;
     }
 }
-void init_queue(queue q, int x)
+int init_queue(queue *q, int x)
 {
-    q.front = -1;
-    q.rear = 0;
-    q.max_items= x;
+    int *temp = malloc(sizeof(int) * x);
+    if (temp == NULL)
+        return 0;
+    else
+    {
+        q->items = temp;
+        q->front = 0;
+        q->rear = 0;
+        return 1;
+    }
 }
 void enqueue(queue *q, int value)
 {
-    q->items[&q->rear] = value;
+    q->items[q->rear] = value;
     q->rear++;
+}
+int deque(queue *q)
+{
+    int temp = q->items[q->front];
+    q->front++;
+    return temp;
+}
+bool is_empty(queue *q)
+{
+    return (q->rear == q->front);
+}
+void free_malloc(queue *q)
+{
+    free(q->items);
 }
 int main(int argc, char const *argv[])
 {
@@ -111,8 +133,8 @@ int main(int argc, char const *argv[])
         exit(1);
     }*/
 
-    //int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
-     int V =3, N = 2, K = 4, TV = 1, TN = 1, O = 1;
+    // int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
+    int V = 3, N = 2, K = 4, TV = 1, TN = 1, O = 1;
 
     int check = check_values(N, V, K, TV, TN, O);
     if (check == 1)
@@ -121,9 +143,17 @@ int main(int argc, char const *argv[])
     create_file();
 
     queue qn;
-    init_queue(qn,N);
+    if (!init_queue(&qn, N))
+    {
+        fprintf(stderr, "malloc failed");
+        exit(1);
+    }
     queue qv;
-    init_queue(qv,V);
+    if (!init_queue(&qv, V))
+    {
+        fprintf(stderr, "malloc failed");
+        exit(1);
+    }
 
     mem *shmem;
     shmem = create_shmem();
@@ -133,6 +163,9 @@ int main(int argc, char const *argv[])
         exit(1);
     }
     init_mem(shmem);
+
+    sem_init(&shmem->sem,1, 0);
+    sem_init(&shmem->sem_eqN,1, 0);
 
     int id = fork();
     if (id == 0) // MAIN process
@@ -148,10 +181,10 @@ int main(int argc, char const *argv[])
             else if (temp == 0)
             {
                 idV = i + 1;
+                enqueue(&qv, idV);
                 char str[100];
-                sprintf(str,"V %i: started",idV);
-                append_file(str,&shmem->counter,false);
-                enqueue(&qv,idV); //tu som skončil
+                sprintf(str, "V %i: started", idV);
+                append_file(str, &shmem->counter, false);
                 break;
             }
         }
@@ -171,6 +204,10 @@ int main(int argc, char const *argv[])
                 else if (temp == 0)
                 {
                     idN = i + 1;
+                    enqueue(&qn, idN);
+                    char str[100];
+                    sprintf(str, "N %i: started", idN);
+                    append_file(str, &shmem->counter, false);
                     break;
                 }
             }
@@ -179,17 +216,37 @@ int main(int argc, char const *argv[])
                 printf("process s idn %i\n", idN);
             }
         }
+        if (idV != 0)
+        {
+            //cakam na semafor ci možem
+        for (int i = 0; i < V; i++)
+        sem_wait(&shmem->sem);
+
+        //priel semafor že možem
+        deque(&qv); //tu som skončil, treba to deque načítať ktorý, atĎ
+        }
     }
     else if (id > 0)
     {
         // dispečer
-        int cart_capacity_counter= 0;
+        int cart_capacity_counter = 0;
         append_file("D: started", &shmem->counter, false);
-        if (true)
+        while (true)
         {
-            append_file("D: PH", &shmem->counter, false);
+
+            if (!is_empty(&qv) && shmem->waiting == 0)
+            {
+                append_file("D: next cart", &shmem->counter, false);
+                //posielam signal že možem
+                sem_post(&shmem->sem);
+                usleep(O);
+            }
+            else if (is_empty(&qv))
+            {
+                append_file("D: closing", &shmem->counter, false);
+                break;
+            }
         }
-        usleep(O);
     }
     else
     {
@@ -199,7 +256,10 @@ int main(int argc, char const *argv[])
 
     if (id > 0)
     {
+        free_malloc(&qv);
+        free_malloc(&qn);
         wait(NULL); // wait
+        sem_destroy(&shmem->sem);
         munmap(shmem, sizeof(mem));
         shm_unlink(shared_mem);
     }

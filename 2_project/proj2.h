@@ -1,17 +1,18 @@
 #ifndef proj2_h
 #define proj2_h
 #include <stdbool.h>
+sem_t sem;
 typedef struct {
 int counter;
-int waiting;
+int *waiting;
 int done;
-bool will_come;
+bool sem;
+bool sem_eqN;
 } mem;
 
 typedef struct
 {
-    int items;
-    int max_items;
+    int *items;
     int front;
     int rear;
 } queue;
