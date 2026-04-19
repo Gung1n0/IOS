@@ -172,6 +172,7 @@ int main(int argc, char const *argv[])
     {
         int idV = 0;
         int idN = 0;
+        sem_wait(&shmem->sem);
         // vytvorenie vozíkov
         for (int i = 0; i < V; i++)
         {
