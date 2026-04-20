@@ -6,11 +6,13 @@ typedef struct {
     int counter;
     int waiting_V;
     int waiting_N;
+    int total_done;
     sem_t sem_V;
     sem_t sem_N;
     sem_t filling;
     sem_t finish;
     sem_t sem_V_start;
+    sem_t write;
     bool end;
 } mem;
 #endif
