@@ -106,6 +106,7 @@ int check_values(int N, int V, int K, int TV, int TN, int O)
         fprintf(stderr, "wrong distance\n");
         return 1;
     }
+    return 0;
 }
 int get_random(int min, int max, int seed)
 {
@@ -115,14 +116,14 @@ int get_random(int min, int max, int seed)
 
 int main(int argc, char const *argv[])
 {
-    /*if (!(argc == 7))
+    if (!(argc == 7))
     {
         fprintf(stderr, "too few arguments");
         exit(1);
-    }*/
+    }
 
-    // int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
-    int V = 3, N = 2, K = 4, TV = 1, TN = 1, O = 1;
+    int V = atoi(argv[1]), N = atoi(argv[2]), K = atoi(argv[3]), TV = atoi(argv[4]), TN = atoi(argv[5]), O = atoi(argv[6]);
+    //int V = 3, N = 2, K = 4, TV = 1, TN = 1, O = 1;
 
     int check = check_values(N, V, K, TV, TN, O);
     if (check == 1)
