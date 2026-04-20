@@ -61,6 +61,8 @@ void init_mem(mem *shm)
     shm->counter = 1;
     shm->waiting_V = 0;
     shm->waiting_N = 0;
+    shm->finished_N = 0;
+    shm->total_N = 0;  
     shm->end = false;
 }
 void clean(mem *shmem)
@@ -144,6 +146,7 @@ int main(int argc, char const *argv[])
         exit(1);
     }
     init_mem(shmem);
+    shmem->total_N = N;
 
     sem_init(&shmem->sem_V, 1, 0);
     sem_init(&shmem->sem_V_start, 1, 0);
@@ -151,9 +154,9 @@ int main(int argc, char const *argv[])
     sem_init(&shmem->filling, 1, 0);
     sem_init(&shmem->finish, 1, 0);
     sem_init(&shmem->write, 1, 1);
+    sem_init(&shmem->ready, 1, 0);
 
     char str[100];
-
     int id = fork();
     int idV = 0;
     int idN = 0;
@@ -176,22 +179,27 @@ int main(int argc, char const *argv[])
         }
         if (idV != 0)
         {
-            int board;
             printf("%i\n", !shmem->end);
             while (!shmem->end)
             {
                 sprintf(str, "V %i: boarding started", idV);
-
+                
                 sem_wait(&shmem->sem_V_start);
                 wait_for_write(shmem, str);
                 shmem->waiting_V--;
+                
+                int remaining = shmem->total_N - shmem->finished_N;
+                int board;
 
-                if(shmem->waiting_N)
+                
                 sem_wait(&shmem->write);
-                if(shmem->waiting_N < K) board = shmem->waiting_N;
+                if(remaining < K) board = remaining;
                 else board = K;
                 sem_post(&shmem->write);
 
+                for (int i = 0; i < board; i++)
+                sem_wait(&shmem->ready);
+                
                 for (int i = 0; i < board; i++)
                     sem_post(&shmem->sem_N);
                 for (int j = 0; j < board; j++)
@@ -216,6 +224,7 @@ int main(int argc, char const *argv[])
                 sprintf(str, "V %i: leaving complete", idV);
                 wait_for_write(shmem, str);
                 shmem->waiting_V++;
+                sem_post(&shmem->filling);
             }
             sprintf(str, "V %i: closing", idV);
             wait_for_write(shmem, str);
@@ -237,6 +246,7 @@ int main(int argc, char const *argv[])
                     wait_for_write(shmem, str);
                     usleep(get_random(0, TN, TN));
                     shmem->waiting_N++;
+                    sem_post(&shmem->ready);
                     break;
                 }
             }
@@ -255,6 +265,7 @@ int main(int argc, char const *argv[])
             sprintf(str, "N %i: leaving", idN);
             sem_wait(&shmem->finish);
             wait_for_write(shmem, str);
+            shmem->finished_N++;
             sem_post(&shmem->sem_V);
             // navštevnik done
         }
@@ -265,14 +276,15 @@ int main(int argc, char const *argv[])
         sprintf(str, "D: started");
         wait_for_write(shmem, str);
 
-        usleep(1000); //// TOTO NESMIE BYť IBA DOCASNE
+//        usleep(1000); //// TOTO NESMIE BYť IBA DOCASNE
         do
         {
             sprintf(str, "D: next cart");
             wait_for_write(shmem, str);
             sem_post(&shmem->sem_V_start);
+            sem_wait(&shmem->filling);
             usleep(O);
-        } while (shmem->waiting_N > 0);
+        } while (shmem->finished_N < shmem->total_N);
         sprintf(str, "D: closing");
         wait_for_write(shmem, str);
         shmem->end = true;
