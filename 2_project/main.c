@@ -7,7 +7,6 @@
 #include <sys/wait.h>
 #include <semaphore.h>
 #include "proj2.h"
-
 #define shared_mem "sh_mem"
 
 void create_file()
@@ -55,9 +54,16 @@ mem *create_shmem()
 void init_mem(mem *shm)
 {
     shm->counter = 1;
-    shm->waiting = NULL;
-    shm->done = 0;
-    shm->sem = false;
+    shm->waiting_V = 0;
+    shm->waiting_N = 0;
+}
+void clean(mem *shmem)
+{
+    wait(NULL); // wait
+    sem_destroy(&shmem->sem_V);
+    sem_destroy(&shmem->sem_N);
+    munmap(shmem, sizeof(mem));
+    shm_unlink(shared_mem);
 }
 int check_values(int N, int V, int K, int TV, int TN, int O)
 {
@@ -93,38 +99,7 @@ int check_values(int N, int V, int K, int TV, int TN, int O)
         return 1;
     }
 }
-int init_queue(queue *q, int x)
-{
-    int *temp = malloc(sizeof(int) * x);
-    if (temp == NULL)
-        return 0;
-    else
-    {
-        q->items = temp;
-        q->front = 0;
-        q->rear = 0;
-        return 1;
-    }
-}
-void enqueue(queue *q, int value)
-{
-    q->items[q->rear] = value;
-    q->rear++;
-}
-int deque(queue *q)
-{
-    int temp = q->items[q->front];
-    q->front++;
-    return temp;
-}
-bool is_empty(queue *q)
-{
-    return (q->rear == q->front);
-}
-void free_malloc(queue *q)
-{
-    free(q->items);
-}
+
 int main(int argc, char const *argv[])
 {
     /*if (!(argc == 7))
@@ -142,19 +117,6 @@ int main(int argc, char const *argv[])
 
     create_file();
 
-    queue qn;
-    if (!init_queue(&qn, N))
-    {
-        fprintf(stderr, "malloc failed");
-        exit(1);
-    }
-    queue qv;
-    if (!init_queue(&qv, V))
-    {
-        fprintf(stderr, "malloc failed");
-        exit(1);
-    }
-
     mem *shmem;
     shmem = create_shmem();
     if (shmem == NULL)
@@ -164,15 +126,18 @@ int main(int argc, char const *argv[])
     }
     init_mem(shmem);
 
-    sem_init(&shmem->sem,1, 0);
-    sem_init(&shmem->sem_eqN,1, 0);
+    sem_init(&shmem->sem_V, 1, 0);
+    sem_init(&shmem->sem_N, 1, 0);
+    sem_init(&shmem->filling, 1, 0);
+    sem_init(&shmem->finish, 1, 0);
+
+    char str[100];
 
     int id = fork();
+    int idV = 0;
+    int idN = 0;
     if (id == 0) // MAIN process
     {
-        int idV = 0;
-        int idN = 0;
-        sem_wait(&shmem->sem);
         // vytvorenie vozíkov
         for (int i = 0; i < V; i++)
         {
@@ -182,16 +147,15 @@ int main(int argc, char const *argv[])
             else if (temp == 0)
             {
                 idV = i + 1;
-                enqueue(&qv, idV);
-                char str[100];
                 sprintf(str, "V %i: started", idV);
                 append_file(str, &shmem->counter, false);
+                shmem->waiting_V++;
                 break;
             }
         }
         if (idV != 0)
         {
-            printf("process s idv %i\n", idV);
+            // printf("process s idv %i\n", idV);
         }
 
         // vytvorenie navštevnikov
@@ -205,49 +169,52 @@ int main(int argc, char const *argv[])
                 else if (temp == 0)
                 {
                     idN = i + 1;
-                    enqueue(&qn, idN);
-                    char str[100];
                     sprintf(str, "N %i: started", idN);
                     append_file(str, &shmem->counter, false);
+                    usleep(TN);
+                    sprintf(str, "N %i: queue", idN);
+                    shmem->waiting_N++;
                     break;
                 }
             }
-            if (idN != 0)
-            {
-                printf("process s idn %i\n", idN);
-            }
         }
+        bool stop = false;
         if (idV != 0)
         {
-            //cakam na semafor ci možem
-        for (int i = 0; i < V; i++)
-        sem_wait(&shmem->sem);
+            sprintf(str, "V %i: boarding started", idV);
 
-        //priel semafor že možem
-        deque(&qv); //tu som skončil, treba to deque načítať ktorý, atĎ
+            sem_wait(&shmem->sem_V);
+            append_file(str, &shmem->counter, false);
+            shmem->waiting_V--;
+            for (int i = 0; i < K; i++)
+                sem_post(&shmem->sem_N);
+            
+        }
+        else if (idV == 0 && id == 0)
+        {
+            sprintf(str, "N %i: boarding", idN);
+            sem_wait(&shmem->sem_N);
+            append_file(str, &shmem->counter, false);
+            shmem->waiting_N--;
+
+            sprintf(str, "N %i: leaving", idN);
+            sem_wait(&shmem->finish);
+            append_file(str, &shmem->counter, false);
         }
     }
     else if (id > 0)
     {
         // dispečer
-        int cart_capacity_counter = 0;
         append_file("D: started", &shmem->counter, false);
-        while (true)
+        for (int i = 0; i < V; i++)
         {
-
-            if (!is_empty(&qv) && shmem->waiting == 0)
-            {
-                append_file("D: next cart", &shmem->counter, false);
-                //posielam signal že možem
-                sem_post(&shmem->sem);
-                usleep(O);
-            }
-            else if (is_empty(&qv))
-            {
-                append_file("D: closing", &shmem->counter, false);
-                break;
-            }
+            append_file("D: next cart", &shmem->counter, false);
+            if (shmem->waiting_V == 0)
+                sem_post(&shmem->sem_V);
+            sem_wait(&shmem->filling);
+            usleep(O);
         }
+        append_file("D: closing", &shmem->counter, false);
     }
     else
     {
@@ -256,13 +223,6 @@ int main(int argc, char const *argv[])
     }
 
     if (id > 0)
-    {
-        free_malloc(&qv);
-        free_malloc(&qn);
-        wait(NULL); // wait
-        sem_destroy(&shmem->sem);
-        munmap(shmem, sizeof(mem));
-        shm_unlink(shared_mem);
-    }
-    return 0;
+        clean(shmem);
+    exit(0);
 }
