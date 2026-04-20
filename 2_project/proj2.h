@@ -10,5 +10,7 @@ typedef struct {
     sem_t sem_N;
     sem_t filling;
     sem_t finish;
+    sem_t sem_V_start;
+    bool end;
 } mem;
 #endif

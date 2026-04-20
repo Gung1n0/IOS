@@ -56,10 +56,18 @@ void init_mem(mem *shm)
     shm->counter = 1;
     shm->waiting_V = 0;
     shm->waiting_N = 0;
+    shm->end = false;
 }
 void clean(mem *shmem)
 {
-    wait(NULL); // wait
+    FILE *file;
+    file = fopen("proj2.out", "a");
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    if (size > 0)
+        ftruncate(fileno(file), size - 1);
+    fclose(file);
+
     sem_destroy(&shmem->sem_V);
     sem_destroy(&shmem->sem_N);
     munmap(shmem, sizeof(mem));
@@ -99,6 +107,11 @@ int check_values(int N, int V, int K, int TV, int TN, int O)
         return 1;
     }
 }
+int get_random(int min, int max, int seed)
+{
+    srand(seed);
+    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
 
 int main(int argc, char const *argv[])
 {
@@ -127,6 +140,7 @@ int main(int argc, char const *argv[])
     init_mem(shmem);
 
     sem_init(&shmem->sem_V, 1, 0);
+    sem_init(&shmem->sem_V_start, 1, 0);
     sem_init(&shmem->sem_N, 1, 0);
     sem_init(&shmem->filling, 1, 0);
     sem_init(&shmem->finish, 1, 0);
@@ -155,7 +169,40 @@ int main(int argc, char const *argv[])
         }
         if (idV != 0)
         {
-            // printf("process s idv %i\n", idV);
+            printf("%i\n",!shmem->end);
+            while (!shmem->end)
+            {
+                sprintf(str, "V %i: boarding started", idV);
+
+                sem_wait(&shmem->sem_V_start);
+                append_file(str, &shmem->counter, false);
+                shmem->waiting_V--;
+                for (int i = 0; i < K; i++)
+                    sem_post(&shmem->sem_N);
+                for (int j = 0; j < K; j++)
+                    sem_wait(&shmem->sem_V);
+
+                sprintf(str, "V %i: boarding complete", idV);
+                append_file(str, &shmem->counter, false);
+
+                usleep(get_random(TV / 2, TV, TV));
+
+                // Čeká na uvolnění místa ve výstupní stanici (pokud tam ještě probíhá výstup z předchozího vozíku) == to ešte neni, spraviť
+
+                sprintf(str, "V %i: leaving started", idV);
+                append_file(str, &shmem->counter, false);
+
+                for (int i = 0; i < K; i++)
+                    sem_post(&shmem->finish);
+                for (int j = 0; j < K; j++)
+                    sem_wait(&shmem->sem_V);
+
+                sprintf(str, "V %i: leaving complete", idV);
+                append_file(str, &shmem->counter, false);
+            }
+            sprintf(str, "V %i: closing", idV);
+            append_file(str, &shmem->counter, false);
+            // vozik done
         }
 
         // vytvorenie navštevnikov
@@ -178,43 +225,35 @@ int main(int argc, char const *argv[])
                 }
             }
         }
-        bool stop = false;
-        if (idV != 0)
-        {
-            sprintf(str, "V %i: boarding started", idV);
-
-            sem_wait(&shmem->sem_V);
-            append_file(str, &shmem->counter, false);
-            shmem->waiting_V--;
-            for (int i = 0; i < K; i++)
-                sem_post(&shmem->sem_N);
-            
-        }
-        else if (idV == 0 && id == 0)
+        if (idV == 0 && id == 0) // navštevník pokračovanie
         {
             sprintf(str, "N %i: boarding", idN);
             sem_wait(&shmem->sem_N);
             append_file(str, &shmem->counter, false);
             shmem->waiting_N--;
+            sem_post(&shmem->sem_V);
 
             sprintf(str, "N %i: leaving", idN);
             sem_wait(&shmem->finish);
             append_file(str, &shmem->counter, false);
+            sem_post(&shmem->sem_V);
+            // navštevnik done
         }
     }
     else if (id > 0)
     {
         // dispečer
         append_file("D: started", &shmem->counter, false);
-        for (int i = 0; i < V; i++)
+        
+        do
         {
             append_file("D: next cart", &shmem->counter, false);
-            if (shmem->waiting_V == 0)
-                sem_post(&shmem->sem_V);
-            sem_wait(&shmem->filling);
+            sem_post(&shmem->sem_V_start);
             usleep(O);
-        }
+            sleep(1); //// TOTO NESMIE BYť IBA DOCASNE
+        }while (shmem->waiting_N > 0);
         append_file("D: closing", &shmem->counter, false);
+        shmem->end = true;
     }
     else
     {
@@ -222,7 +261,7 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
-    if (id > 0)
+    if (id == 0 && idV ==0 && idN ==0)
         clean(shmem);
     exit(0);
 }
