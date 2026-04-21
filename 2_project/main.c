@@ -62,7 +62,7 @@ void init_mem(mem *shm)
     shm->waiting_V = 0;
     shm->waiting_N = 0;
     shm->finished_N = 0;
-    shm->total_N = 0;  
+    shm->total_N = 0;
     shm->end = false;
 }
 void clean(mem *shmem)
@@ -183,23 +183,24 @@ int main(int argc, char const *argv[])
             while (!shmem->end)
             {
                 sprintf(str, "V %i: boarding started", idV);
-                
+
                 sem_wait(&shmem->sem_V_start);
                 wait_for_write(shmem, str);
                 shmem->waiting_V--;
-                
+
                 int remaining = shmem->total_N - shmem->finished_N;
                 int board;
 
-                
                 sem_wait(&shmem->write);
-                if(remaining < K) board = remaining;
-                else board = K;
+                if (remaining < K)
+                    board = remaining;
+                else
+                    board = K;
                 sem_post(&shmem->write);
 
                 for (int i = 0; i < board; i++)
-                sem_wait(&shmem->ready);
-                
+                    sem_wait(&shmem->ready);
+
                 for (int i = 0; i < board; i++)
                     sem_post(&shmem->sem_N);
                 for (int j = 0; j < board; j++)
@@ -211,7 +212,6 @@ int main(int argc, char const *argv[])
                 usleep(get_random(TV / 2, TV, TV));
 
                 // Čeká na uvolnění místa ve výstupní stanici (pokud tam ještě probíhá výstup z předchozího vozíku) == to ešte neni, spraviť
-                
 
                 sprintf(str, "V %i: leaving started", idV);
                 wait_for_write(shmem, str);
@@ -276,7 +276,7 @@ int main(int argc, char const *argv[])
         sprintf(str, "D: started");
         wait_for_write(shmem, str);
 
-//        usleep(1000); //// TOTO NESMIE BYť IBA DOCASNE
+        //        usleep(1000); //// TOTO NESMIE BYť IBA DOCASNE
         do
         {
             sprintf(str, "D: next cart");
@@ -288,6 +288,9 @@ int main(int argc, char const *argv[])
         sprintf(str, "D: closing");
         wait_for_write(shmem, str);
         shmem->end = true;
+
+        for (int i = 0; i < V; i++) 
+        sem_post(&shmem->sem_V_start);
     }
     else
     {
